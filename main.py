@@ -53,7 +53,7 @@ EXCHANGES = {
 }
 
 SYMBOLS = ["BTC/USDT", "ETH/USDT"]
-INTERVALS = ["1m", "5m", "15m", "1h", "4h"]
+DEFAULT_WEIGHTS = {"1m": 0.1, "5m": 0.2, "15m": 0.3, "1h": 0.2, "4h": 0.2}
 DEFAULT_WEIGHTS = {""1m":0.1, "5m":0.2, "15m":0.3, "1h":0.2, "4h":0.2}
 FEATURE_COLUMNS = [
     'MA5','MA10','MA20','MA50','MA200','MA5_10_cross','RSI','MACD','MACD_signal','MACD_hist',
