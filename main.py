@@ -576,17 +576,22 @@ if __name__ == "__main__":
 
         # ---------------- Telegram监听 ----------------
         def tg_listener():
-            while True:
-                try:
-                    updates = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates").json()
-                    for u in updates.get("result", []):
-                        msg = u.get("message", {}).get("text", "")
-                        if msg:
-                            save_log(f"[TG收到] {msg}")
-                            send_tg_cn("回复", "机器人运行中 ✅")
-                except Exception as e:
-                    save_log(f"[TG监听错误]{e}")
-                time.sleep(10)
+    offset = None
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+            params = {"timeout": 10, "offset": offset}
+            updates = requests.get(url, params=params, timeout=15).json()
+            
+            for u in updates.get("result", []):
+                offset = u["update_id"] + 1  # ✅ 防止重复读取
+                msg = u.get("message", {}).get("text", "")
+                if msg:
+                    save_log(f"[TG收到] {msg}")
+                    send_tg_cn("回复", f"收到指令：{msg}\n机器人运行中 ✅")
+        except Exception as e:
+            save_log(f"[TG监听错误]{e}")
+        time.sleep(2)
 
         # ---------------- 启动所有线程 ----------------
         Thread(target=run_flask, daemon=True).start()
