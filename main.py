@@ -560,21 +560,22 @@ if __name__ == "__main__":
             return "AI Trading Bot Running"
 
         # ---------------- Flask端口启动函数 ----------------
-        def run_flask():
-            import socket
-            port = int(os.environ.get("PORT", 8080))
-            # 自动寻找空闲端口（3000~9000）
-            for p in range(3000, 9000):
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    if s.connect_ex(("127.0.0.1", p)) != 0:
-                        port = p
-                        break
-            try:
-                app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
-            except Exception as e:
-                save_log(f"[Flask启动失败] {e}")
+def run_flask():
+    import socket
+    port = int(os.environ.get("PORT", 8080))
+    # 自动寻找空闲端口（3000~9000）
+    for p in range(3000, 9000):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("127.0.0.1", p)) != 0:
+                port = p
+                break
+    try:
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    except Exception as e:
+        save_log(f"[Flask启动失败] {e}")
 
-        # ---------------- Telegram监听 ----------------
+
+# ---------------- Telegram监听 ----------------
 def tg_listener():
     offset = None
     while True:
@@ -593,13 +594,22 @@ def tg_listener():
             save_log(f"[TG监听错误] {e}")
         time.sleep(2)
 
-        # ---------------- 启动所有线程 ----------------
-        Thread(target=run_flask, daemon=True).start()
-        Thread(target=tg_listener, daemon=True).start()
-        Thread(target=main_loop, daemon=True).start()
 
-        save_log("=== 机器人启动完成（Prod 版）===")
+# ---------------- 主启动 ----------------
+if __name__ == "__main__":
+    from threading import Thread
 
-        # 主线程保活
-        while True:
-            time.sleep(60)
+    # 启动 Flask
+    Thread(target=run_flask, daemon=True).start()
+
+    # 启动 Telegram 监听
+    Thread(target=tg_listener, daemon=True).start()
+
+    # 启动主循环
+    Thread(target=main_loop, daemon=True).start()
+
+    save_log("=== 机器人启动完成（Prod 版）===")
+
+    # 主线程保活
+    while True:
+        time.sleep(60)
