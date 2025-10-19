@@ -575,7 +575,7 @@ if __name__ == "__main__":
                 save_log(f"[Flask启动失败] {e}")
 
         # ---------------- Telegram监听 ----------------
-        def tg_listener():
+def tg_listener():
     offset = None
     while True:
         try:
@@ -590,7 +590,7 @@ if __name__ == "__main__":
                     save_log(f"[TG收到] {msg}")
                     send_tg_cn("回复", f"收到指令：{msg}\n机器人运行中 ✅")
         except Exception as e:
-            save_log(f"[TG监听错误]{e}")
+            save_log(f"[TG监听错误] {e}")
         time.sleep(2)
 
         # ---------------- 启动所有线程 ----------------
