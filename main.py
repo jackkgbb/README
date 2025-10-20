@@ -1,13 +1,12 @@
-# ai_trading_bot_ccxt_safe.py
-# 完整可运行版本：多交易所、多币种、多周期策略 + AI LSTM + TG消息
-# 自动安装依赖: ccxt, pandas, numpy, torch, scikit-learn, joblib, requests
-
+# ===================== ai_trading_bot_ccxt_safe.py =====================
 import os
+import sys
+import subprocess
 import time
 import traceback
 import requests
 from datetime import datetime, timezone
-from threading import Lock
+from threading import Lock, Thread
 import pandas as pd
 import numpy as np
 import ccxt
@@ -17,51 +16,35 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler
-import subprocess
-import sys
+from flask import Flask
 
-
-# 简单日志函数，防止报错
-def save_log(text):
-    print(text)
-
-# ================= 安全版依赖检查 =================
+# ================== 安全版依赖检查 ==================
 def check_and_install_packages(packages):
     for pkg in packages:
         try:
             __import__(pkg)
         except Exception as e:
             print(f"[依赖安装失败]{pkg}: {e}")
-            save_log(f"[依赖安装失败]{pkg}: {e}")
             try:
-                # ✅ 去掉 --user
                 subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
             except Exception as e2:
-                print(f"请手动安装依赖: {pkg}")
-                save_log(f"[依赖安装失败2]{pkg}: {e2}")
+                print(f"请手动安装依赖: {pkg} {e2}")
 
-# 必要依赖列表
-required_packages = ["ccxt","pandas","numpy","torch","scikit-learn","joblib","requests"]
-
-# 执行依赖检查
+required_packages = ["ccxt","pandas","numpy","torch","scikit-learn","joblib","requests","flask"]
 check_and_install_packages(required_packages)
 
-# ================== 全局配置 ==================
+# =================== 全局配置 ==================
 EXCHANGES = {
     "binance": {"ccxt_id": "binance", "apiKey": os.environ.get("BINANCE_APIKEY"), "secret": os.environ.get("BINANCE_SECRET")},
     "okx": {"ccxt_id": "okx", "apiKey": os.environ.get("OKX_APIKEY"), "secret": os.environ.get("OKX_SECRET")},
 }
-
-SYMBOLS = ["BTC/USDT", "ETH/USDT"]
-
-DEFAULT_WEIGHTS = {"1m": 0.1, "5m": 0.2, "15m": 0.3, "1h": 0.2, "4h": 0.2}
-
+SYMBOLS = ["BTC/USDT","ETH/USDT"]
+INTERVALS = ["1m","5m","15m","1h","4h"]
 FEATURE_COLUMNS = [
     'MA5','MA10','MA20','MA50','MA200','MA5_10_cross','RSI','MACD','MACD_signal','MACD_hist',
     'ATR','BB_mid','BB_upper','BB_lower','CCI','Williams_R','CMF','OBV','Volume_Change',
     'K','D','J','MOM','ADX'
 ]
-
 SIGNAL_THRESHOLD = 0.5
 MAX_POSITION_RATIO = 0.3
 STRATEGY_BUDGET = {"scalp":0.1,"short":0.1,"long":0.1, "combined": 0.3}
@@ -83,14 +66,15 @@ BALANCE_LOCK = Lock()
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(HISTORY_DIR, exist_ok=True)
-# ================== 日志 & TG ==================
+
+# =================== 日志 & TG ==================
 def save_log(text):
     fn = f"{LOG_DIR}/log_{datetime.now().strftime('%Y%m%d')}.txt"
     try:
         with open(fn,"a",encoding="utf-8") as f:
             f.write(f"[{datetime.now().isoformat()}] {text}\n")
     except:
-        pass
+        print(text)
 
 def send_tg_cn(title,body):
     if not BOT_TOKEN or not CHAT_ID:
@@ -106,25 +90,7 @@ def send_tg_cn(title,body):
     except Exception as e:
         save_log(f"[TG发送错误]{e}")
 
-# ================== Telegram ==================
-BOT_TOKEN = os.environ.get("BOT_TOKEN","")
-CHAT_ID = os.environ.get("CHAT_ID","")
-
-def send_tg_cn(title, body):
-    if not BOT_TOKEN or not CHAT_ID:
-        save_log(f"[TG未配置] {title} {body}")
-        return
-    try:
-        text = f"【{title}】\n{body}"
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"},
-            timeout=10
-        )
-    except Exception as e:
-        save_log(f"[TG发送错误]{e}")
-
-# ================== CCXT 获取 K 线 ==================
+# =================== CCXT 获取 K 线 ==================
 def get_ccxt_klines(symbol, interval="1h", limit=500, exchange_key="binance"):
     ex_cfg = EXCHANGES[exchange_key]
     try:
@@ -140,66 +106,66 @@ def get_ccxt_klines(symbol, interval="1h", limit=500, exchange_key="binance"):
         save_log(f"[CCXT获取K线失败]{symbol}-{interval}-{exchange_key}: {e}")
         return None
 
-# ================== 技术指标 ==================
+# =================== 技术指标 ==================
 def calculate_indicators(df):
     df = df.copy()
     try:
         for p in [5,10,20,50,200]:
             df[f"MA{p}"] = df["close"].rolling(p, min_periods=1).mean()
         df["MA5_10_cross"] = (df["MA5"] > df["MA10"]).astype(int)
+
+        # RSI
         diff = df["close"].diff()
         gain = diff.clip(lower=0)
         loss = -diff.clip(upper=0)
         df["RSI"] = 100 - 100/(1 + gain.rolling(14,min_periods=1).mean()/(loss.rolling(14,min_periods=1).mean()+1e-9))
+
+        # MACD
         ema12 = df["close"].ewm(span=12, adjust=False).mean()
         ema26 = df["close"].ewm(span=26, adjust=False).mean()
         df["MACD"] = ema12 - ema26
         df["MACD_signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
         df["MACD_hist"] = df["MACD"] - df["MACD_signal"]
-        df["ATR"] = (df["high"] - df["low"]).rolling(14, min_periods=1).mean()
+
+        # Bollinger
         df["BB_mid"] = df["close"].rolling(20).mean()
         df["BB_std"] = df["close"].rolling(20).std()
-        df["BB_upper"] = df["BB_mid"] + 2*df["BB_std"]
-        df["BB_lower"] = df["BB_mid"] - 2*df["BB_std"]
+        df["BB_upper"] = df["BB_mid"] + 2 * df["BB_std"]
+        df["BB_lower"] = df["BB_mid"] - 2 * df["BB_std"]
+
+        # CCI
         tp = (df["high"] + df["low"] + df["close"])/3
         sma_tp = tp.rolling(20,min_periods=1).mean()
         mad = tp.rolling(20,min_periods=1).apply(lambda x: np.mean(np.abs(x-np.mean(x))),raw=True)
         df["CCI"] = (tp - sma_tp)/(0.015*mad + 1e-9)
+
+        # Williams %R
         high_max = df["high"].rolling(14,min_periods=1).max()
         low_min = df["low"].rolling(14,min_periods=1).min()
         df["Williams_R"] = -100*(high_max-df["close"])/(high_max-low_min +1e-9)
-        mfv = ((df["close"]-df["low"])-(df["high"]-df["close"]))/(df["high"]-df["low"] +1e-9)*df["volume"]
-        df["CMF"] = mfv.rolling(20,min_periods=1).sum()/df["volume"].rolling(20,min_periods=1).sum()
-        obv = [0]
-        for i in range(1,len(df)):
-            if df["close"].iloc[i] > df["close"].iloc[i-1]:
-                obv.append(obv[-1] + df["volume"].iloc[i])
-            elif df["close"].iloc[i] < df["close"].iloc[i-1]:
-                obv.append(obv[-1] - df["volume"].iloc[i])
-            else:
-                obv.append(obv[-1])
-        df["OBV"] = obv
-        df["Volume_Change"] = df["volume"].pct_change().fillna(0)
-        low_min_9 = df["low"].rolling(9,min_periods=1).min()
-        high_max_9 = df["high"].rolling(9,min_periods=1).max()
-        df["K"] = 100*(df["close"] - low_min_9)/(high_max_9 - low_min_9 + 1e-9)
-        df["D"] = df["K"].rolling(3,min_periods=1).mean()
-        df["J"] = 3*df["K"] - 2*df["D"]
-        df["MOM"] = df["close"].diff(10)
-        up_move = df["high"].diff()
-        down_move = df["low"].diff().abs()
-        plus_dm = np.where((up_move>down_move)&(up_move>0), up_move, 0)
-        minus_dm = np.where((down_move>up_move)&(down_move>0), down_move, 0)
-        tr = np.maximum(df["high"]-df["low"], np.maximum(abs(df["high"]-df["close"].shift()), abs(df["low"]-df["close"].shift())))
-        atr = pd.Series(tr).rolling(14,min_periods=1).mean()
-        plus_di = 100 * pd.Series(plus_dm).rolling(14,min_periods=1).mean()/(atr+1e-9)
-        minus_di = 100 * pd.Series(minus_dm).rolling(14,min_periods=1).mean()/(atr+1e-9)
-        df["ADX"] = 100 * abs(plus_di - minus_di)/(plus_di + minus_di + 1e-9)
+
         df.dropna(inplace=True)
         return df
     except Exception as e:
         save_log(f"[指标计算错误]{e}")
         return df
+
+# =================== LSTM 模型 ==================
+class LSTMModel(nn.Module):
+    def __init__(self,input_size,hidden_size,num_layers,num_classes):
+        super().__init__()
+        self.lstm = nn.LSTM(input_size,hidden_size,num_layers,batch_first=True)
+        self.fc = nn.Linear(hidden_size,num_classes)
+        self.hidden_size=hidden_size
+        self.num_layers=num_layers
+
+    def forward(self,x):  
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)  
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)  
+        out,_ = self.lstm(x, (h0,c0))  
+        out = self.fc(out[:,-1,:])  
+        return out
+
 
 # ================== LSTM 模型 ==================
 class LSTMModel(nn.Module):
