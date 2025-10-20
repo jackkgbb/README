@@ -106,6 +106,24 @@ def send_tg_cn(title,body):
     except Exception as e:
         save_log(f"[TG发送错误]{e}")
 
+# ================== Telegram ==================
+BOT_TOKEN = os.environ.get("BOT_TOKEN","")
+CHAT_ID = os.environ.get("CHAT_ID","")
+
+def send_tg_cn(title, body):
+    if not BOT_TOKEN or not CHAT_ID:
+        save_log(f"[TG未配置] {title} {body}")
+        return
+    try:
+        text = f"【{title}】\n{body}"
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"},
+            timeout=10
+        )
+    except Exception as e:
+        save_log(f"[TG发送错误]{e}")
+
 # ================== CCXT 获取 K 线 ==================
 def get_ccxt_klines(symbol, interval="1h", limit=500, exchange_key="binance"):
     ex_cfg = EXCHANGES[exchange_key]
