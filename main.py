@@ -412,7 +412,7 @@ def backtest_all_symbols():
     try:
         results = []
         for symbol in SYMBOLS:
-            df = get_ccxt_klines(symbol, "1h", limit=200, exchange_key="binance")  # ✅ 获取2000根K线
+            df = get_ccxt_klines(symbol, "1h", limit=200, exchange_key="binance")  # ✅ 获取200根K线
             if df is None or len(df) < 100:
                 save_log(f"[回测] {symbol} 数据不足，跳过")
                 continue
