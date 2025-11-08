@@ -1,8 +1,0 @@
-ccxt
-pandas
-numpy
-torch
-scikit-learn
-joblib
-requests
-flask
