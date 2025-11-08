@@ -2,3 +2,5 @@ ccxt==3.0.59
 pandas==2.1.1
 requests==2.31.0
 matplotlib==3.8.2
+setuptools>=68.0.0
+wheel>=0.40.0
