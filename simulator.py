@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from config import *
 
 # -----------------------
-# 初始化
+# 初始化目录
 # -----------------------
 os.makedirs("logs", exist_ok=True)
 os.makedirs("reports", exist_ok=True)
@@ -19,18 +19,28 @@ markets_cache = {ex: set() for ex in EXCHANGES}
 last_markets_refresh = 0
 exchange_objs = {}
 
+# -----------------------
+# 初始化交易所对象
+# -----------------------
 for ex_name, cfg in EXCHANGES.items():
     if ex_name == 'binance':
         exchange_objs[ex_name] = ccxt.binance({'apiKey': cfg['api_key'], 'secret': cfg['secret']})
     elif ex_name == 'bybit':
         exchange_objs[ex_name] = ccxt.bybit({'apiKey': cfg['api_key'], 'secret': cfg['secret']})
+    elif ex_name == 'okx':
+        exchange_objs[ex_name] = ccxt.okx({'apiKey': cfg['api_key'], 'secret': cfg['secret']})
+    elif ex_name == 'bitget':
+        exchange_objs[ex_name] = ccxt.bitget({'apiKey': cfg['api_key'], 'secret': cfg['secret']})
 
+# -----------------------
+# 初始化日志
+# -----------------------
 if not os.path.exists(LOG_FILE):
     df = pd.DataFrame(columns=['timestamp','coin','ex_long','ex_short','net_profit','long_price','short_price'])
     df.to_csv(LOG_FILE,index=False)
 
 # -----------------------
-# Telegram
+# Telegram 消息
 # -----------------------
 def tg_send(msg):
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
@@ -47,7 +57,8 @@ def refresh_markets():
     for ex_name, ex in exchange_objs.items():
         try:
             markets = ex.load_markets()
-            markets_cache[ex_name] = {symbol.replace('/USDT','') for symbol, mkt in markets.items() if 'swap' in mkt['type']}
+            # 只保留 USDT 合约交易对
+            markets_cache[ex_name] = {symbol.replace('/USDT','') for symbol, mkt in markets.items() if 'swap' in mkt['type'] or 'future' in mkt['type']}
         except Exception as e:
             tg_send(f"[{ex_name}] 刷新交易对失败: {e}")
 
@@ -59,8 +70,9 @@ def get_funding_rates():
             for symbol, market in markets.items():
                 if 'swap' in market['type'] or 'future' in market['type']:
                     coin = symbol.replace('/USDT','')
-                    funding_rate = market.get('fundingRate', 0.001)
-                    rates.setdefault(coin, {})[ex_name] = funding_rate
+                    # CCXT 不一定提供 fundingRate，若无则用默认 0.001
+                    fr = market.get('fundingRate', 0.001)
+                    rates.setdefault(coin, {})[ex_name] = fr
         except Exception as e:
             tg_send(f"[{ex_name}] 获取 funding_rate 错误: {e}")
     return rates
@@ -73,7 +85,10 @@ def get_mark_prices():
             for symbol, ticker in tickers.items():
                 if symbol.endswith('USDT'):
                     coin = symbol.replace('/USDT','')
-                    prices.setdefault(coin, {})[ex_name] = ticker['last']
+                    # 标记价格取 last 或 mark_price
+                    price = ticker.get('last') or ticker.get('mark')
+                    if price:
+                        prices.setdefault(coin, {})[ex_name] = price
         except Exception as e:
             tg_send(f"[{ex_name}] 获取 mark_price 错误: {e}")
     return prices
@@ -130,7 +145,6 @@ def report_profit(interval='daily'):
     net_profit = df_period['net_profit'].sum()
     tg_send(f"[{interval}报告] 模拟套利净收益: {net_profit:.2f} USD\n各交易所余额: {accounts}")
 
-    # 盈利曲线
     if not df_period.empty:
         plt.figure(figsize=(8,4))
         plt.plot(pd.to_datetime(df_period['timestamp']), df_period['net_profit'].cumsum(), marker='o')
