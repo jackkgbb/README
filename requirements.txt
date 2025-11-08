@@ -1,5 +1,5 @@
 ccxt==3.0.59
-pandas==2.0.2
+polars==0.18.17
 requests==2.31.0
 matplotlib==3.8.2
 setuptools>=68.0.0
