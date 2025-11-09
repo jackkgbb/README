@@ -1,0 +1,20 @@
+exchanges:
+  binance:
+    api_key: "YOUR_BINANCE_TESTNET_API_KEY"
+    secret: "YOUR_BINANCE_TESTNET_SECRET"
+  bybit:
+    api_key: "YOUR_BYBIT_TESTNET_API_KEY"
+    secret: "YOUR_BYBIT_TESTNET_SECRET"
+
+risk:
+  min_balance: 300
+  position_size: 250
+  leverage: 5
+  profit_threshold: 5
+  max_active_positions: 1
+  max_open_minutes: 15
+  starting_balance: 1000  # 模拟资金
+
+telegram:
+  token: "YOUR_TELEGRAM_BOT_TOKEN"
+  chat_id: "YOUR_CHAT_ID"
